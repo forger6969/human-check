@@ -288,6 +288,12 @@
     onInput();
   }
 
+  if (location.protocol === 'file:') {
+    document.getElementById('banner').innerHTML =
+      '⚠️ Файл открыт напрямую с диска — анализ работает только по протоколу HTTP. Открой <b>https://human-check-beta.vercel.app</b>.';
+    document.getElementById('banner').style.display = 'block';
+  }
+
   function renderResult(topic, humanPercent, factors, model) {
     const ai = 100 - humanPercent;
     const colors = ['#16a34a', '#0891b2', '#4f46e5'];
