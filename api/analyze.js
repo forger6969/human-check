@@ -1,3 +1,14 @@
+const SYSTEM_PROMPT = `Ты детектор текста. Проанализируй текст и определи, написал его человек или сгенерировал ИИ.
+
+Признаки человеческого текста: эмоциональные оттенки, живые детали, нестандартные формулировки, лёгкие шероховатости, личные переживания, естественный ритм предложений.
+Признаки ИИ: шаблонные обороты, идеальная структура, канцелярит («в современном мире», «важно отметить», «таким образом»), перечисление без конкретики.
+
+Ответь строго в одну строку на русском в формате:
+вердикт: ТЕМА (3–5 слов). ЧЕЛОВЕК: NN процентов, ИИ: MM процентов.
+
+Вердикт — одно слово: ЧЕЛОВЕК, ИИ или НЕОПРЕДЕЛЁННО.
+NN за истинно живой текст ставь 85–90, за нейтральный 60–80, за явно машинный 25–50. NN + MM всегда = 100.`;
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -10,18 +21,20 @@ export default async function handler(req, res) {
 
   const key = process.env.GROQ_API_KEY;
   const analysis = realAnalysis(trimmed);
-
-  if (!key) {
+  const fallback = (topic, model) => {
     const humanPercent = randomPercent(trimmed);
-    return res.json({
-      topic: "Groq не подключён",
+    return {
+      topic,
+      verdict: "ЧЕЛОВЕК",
       humanPercent,
       factors: humanFactors(humanPercent, analysis),
-      model: null,
-    });
-  }
+      model,
+    };
+  };
 
-  const sample = trimmed.slice(0, 1200);
+  if (!key) return res.json(fallback("Тема недоступна без ключа", null));
+
+  const sample = trimmed.slice(0, 2000);
   try {
     const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
@@ -31,45 +44,38 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "groq/compound-mini",
-        temperature: 0,
-        max_tokens: 30,
+        temperature: 0.2,
+        max_tokens: 80,
         messages: [
-          {
-            role: "system",
-            content: "Определи тему текста в 3–5 словах на русском языке. Верни только тему, без кавычек и пояснений.",
-          },
+          { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: sample },
         ],
       }),
     });
 
-    if (!groqRes.ok) {
-      const humanPercent = randomPercent(trimmed);
-      return res.json({
-        topic: "Не удалось определить тему",
-        humanPercent,
-        factors: humanFactors(humanPercent, analysis),
-        model: null,
-      });
-    }
+    if (!groqRes.ok) return res.json(fallback("Не удалось определить тему", null));
 
     const data = await groqRes.json();
-    const topic = (data.choices && data.choices[0] && data.choices[0].message.content || "").trim();
-    const humanPercent = randomPercent(trimmed);
+    const raw = (data.choices && data.choices[0] && data.choices[0].message.content || "").trim();
+
+    const humanMatch = raw.match(/ЧЕЛОВЕК:?\s*(\d+)%?/i);
+    const aiMatch = raw.match(/ИИ:?\s*(\d+)%?/i);
+    const verdict = raw.includes("ИИ") && !raw.includes("ЧЕЛОВЕК") ? "ИИ" : raw.includes("ЧЕЛОВЕК") ? "ЧЕЛОВЕК" : "НЕОПРЕДЕЛЁННО";
+    const human = humanMatch ? Math.min(95, Math.max(25, parseInt(humanMatch[1], 10))) : null;
+
+    let topic = raw.split(".")[0].replace(/^(вердикт|ЧЕЛОВЕК|ИИ|НЕОПРЕДЕЛЁННО)[:.,]*/i, "").trim();
+    if (!topic || topic.length > 60) topic = "Анализ текста";
+
     return res.json({
-      topic: topic || "Не удалось определить тему",
-      humanPercent,
-      factors: humanFactors(humanPercent, analysis),
+      topic,
+      verdict,
+      humanPercent: human != null ? human : randomPercent(trimmed),
+      factors: humanFactors(human != null ? human : randomPercent(trimmed), analysis),
       model: data.model || "groq",
+      raw,
     });
   } catch {
-    const humanPercent = randomPercent(trimmed);
-    return res.json({
-      topic: "Не удалось определить тему",
-      humanPercent,
-      factors: humanFactors(humanPercent, analysis),
-      model: null,
-    });
+    return res.json(fallback("Не удалось определить тему", null));
   }
 }
 
@@ -90,11 +96,6 @@ function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
 
-function humanFactor(score, strength = 1) {
-  const noise = (Math.random() - 0.5) * 8;
-  return Math.round(clamp(score * (1 - strength) + 100 * strength + noise, 78, 96));
-}
-
 function humanFactors(humanPercent, a) {
   const vocabulary = clamp(70 + humanPercent * 0.18 + a.uniqShare * 8 + (Math.random() - 0.5) * 6, 80, 95);
   const syntax = clamp(
@@ -108,9 +109,10 @@ function humanFactors(humanPercent, a) {
     78,
     96
   );
+  const base = Math.round(clamp(humanPercent + (Math.random() - 0.5) * 6, 80, 96));
 
   return [
-    { label: "Стилистическая близость", value: Math.round(clamp(style, 79, 96)), kind: "human" },
+    { label: "Стилистическая близость", value: Math.round(clamp(base, 79, 96)), kind: "human" },
     { label: "Словарное разнообразие", value: Math.round(clamp(vocabulary, 79, 96)), kind: "human" },
     { label: "Синтаксическая структура", value: Math.round(clamp(syntax, 78, 96)), kind: "human" },
   ];
@@ -120,6 +122,5 @@ function randomPercent(text) {
   const words = text.split(/\s+/).length;
   let ai = 10 + Math.floor(Math.random() * 6);
   if (words < 40) ai = Math.max(ai, 14);
-  if (words < 10) ai = Math.max(ai, 12);
-  return ai;
+  return 100 - ai;
 }

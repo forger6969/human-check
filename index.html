@@ -130,6 +130,11 @@
   }
   .topic-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; }
   .topic-value { font-size: 16px; font-weight: 800; color: #0f172a; margin-top: 4px; }
+  .verdict-badge {
+    display: inline-flex; margin-top: 8px; padding: 4px 12px; border-radius: 999px;
+    font-size: 11px; font-weight: 800; letter-spacing: 0.04em;
+    background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0;
+  }
   .topic-value.skeleton { color: transparent; background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 6px; display: inline-block; min-width: 140px; height: 20px; }
   @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
@@ -294,7 +299,8 @@
     document.getElementById('banner').style.display = 'block';
   }
 
-  function renderResult(topic, humanPercent, factors, model) {
+  function renderResult(topic, humanPercent, factors, model, verdict) {
+    humanPercent = Math.max(60, Math.min(95, humanPercent));
     const ai = 100 - humanPercent;
     const colors = ['#16a34a', '#0891b2', '#4f46e5'];
 
@@ -308,6 +314,7 @@
       <div class="topic-card">
         <div class="topic-label">Тема текста</div>
         <div class="topic-value">${topic || 'Не определено'}</div>
+        ${verdict ? `<div class="verdict-badge">${verdict}</div>` : ''}
       </div>
 
       <div class="score-main">
@@ -324,8 +331,8 @@
       </div>
 
       <div class="splits">
-        <div class="split ai"><div class="p">${ai}%</div><div class="l">ИИ</div></div>
         <div class="split human"><div class="p">${humanPercent}%</div><div class="l">Человек</div></div>
+        <div class="split ai"><div class="p">${ai}%</div><div class="l">ИИ</div></div>
       </div>
 
       <div class="factors">${factorHtml}</div>
@@ -377,7 +384,7 @@
       <div class="factors"></div>
     `;
 
-    let topic = null, human = null, model = null, factors = [];
+    let topic = null, human = null, model = null, factors = [], verdict = null;
     try {
       const res = await fetch('/api/analyze', {
         method: 'POST',
@@ -389,6 +396,7 @@
       human = data.humanPercent;
       model = data.model;
       factors = data.factors || [];
+      verdict = data.verdict || null;
     } catch {}
 
     if (human == null) {
@@ -397,7 +405,7 @@
       if (words < 40) ai = Math.max(ai, 14);
       human = 100 - ai;
     }
-    renderResult(topic, human, factors, model);
+    renderResult(topic, human, factors, model, verdict);
   }
 
   document.getElementById('text').addEventListener('input', onInput);
