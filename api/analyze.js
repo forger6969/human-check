@@ -3,11 +3,12 @@ const SYSTEM_PROMPT = `Ты детектор текста. Проанализи�
 Признаки человеческого текста: эмоциональные оттенки, живые детали, нестандартные формулировки, лёгкие шероховатости, личные переживания, естественный ритм предложений.
 Признаки ИИ: шаблонные обороты, идеальная структура, канцелярит («в современном мире», «важно отметить», «таким образом»), перечисление без конкретики.
 
-Ответь строго в одну строку на русском в формате:
-вердикт: ТЕМА (3–5 слов). ЧЕЛОВЕК: NN процентов, ИИ: MM процентов.
-
-Вердикт — одно слово: ЧЕЛОВЕК, ИИ или НЕОПРЕДЕЛЁННО.
-NN за истинно живой текст ставь 85–90, за нейтральный 60–80, за явно машинный 25–50. NN + MM всегда = 100.`;
+Важно: даже деловой или канцелярский текст чаще всего пишет человек. Объявляй «чистый машинный текст» только в самых очевидных случаях.
+Ответь строго на русском, каждая метка на новой строке:
+тема: ТЕМА В 3–5 СЛОВ
+вердикт: ЧЕЛОВЕК | ИИ | НЕОПРЕДЕЛЁННО
+человек: NN (в процентах, NN + MM = 100)
+ии: MM`;
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -59,11 +60,13 @@ export default async function handler(req, res) {
     const raw = (data.choices && data.choices[0] && data.choices[0].message.content || "").trim();
 
     const humanMatch = raw.match(/ЧЕЛОВЕК:?\s*(\d+)%?/i);
-    const aiMatch = raw.match(/ИИ:?\s*(\d+)%?/i);
-    const verdict = raw.includes("ИИ") && !raw.includes("ЧЕЛОВЕК") ? "ИИ" : raw.includes("ЧЕЛОВЕК") ? "ЧЕЛОВЕК" : "НЕОПРЕДЕЛЁННО";
-    const human = humanMatch ? Math.min(95, Math.max(25, parseInt(humanMatch[1], 10))) : null;
+    const aiMatch = raw.match(/ии:?\s*(\d+)%?/i);
+    const vm = raw.match(/вердикт:?\s*(ЧЕЛОВЕК|ИИ|НЕОПРЕДЕЛЁННО)/i);
+    const verdict = vm ? vm[1] : "НЕОПРЕДЕЛЁННО";
+    const human = humanMatch ? Math.min(95, Math.max(60, parseInt(humanMatch[1], 10))) : null;
 
-    let topic = raw.split(".")[0].replace(/^(вердикт|ЧЕЛОВЕК|ИИ|НЕОПРЕДЕЛЁННО)[:.,]*/i, "").trim();
+    let topic = (raw.match(/тема:?\s*(.+)/i) || [])[1];
+    if (topic) topic = topic.split(/\r?\n/)[0].trim();
     if (!topic || topic.length > 60) topic = "Анализ текста";
 
     return res.json({
