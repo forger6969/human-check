@@ -288,23 +288,11 @@
     onInput();
   }
 
-  function factorsFor(humanPercent) {
-    const style = Math.round(humanPercent * (0.9 + Math.random() * 0.2));
-    const vocab = Math.round(humanPercent * (0.8 + Math.random() * 0.25));
-    const syntax = Math.round(humanPercent * (0.85 + Math.random() * 0.2));
-    return [
-      { label: 'Стилистическая близость', value: Math.min(style, 99) },
-      { label: 'Словарное разнообразие', value: Math.min(vocab, 99) },
-      { label: 'Синтаксическая структура', value: Math.min(syntax, 99) },
-    ];
-  }
-
-  function renderResult(topic, humanPercent, model) {
+  function renderResult(topic, humanPercent, factors, model) {
     const ai = 100 - humanPercent;
-    const factors = factorsFor(humanPercent);
-    const colors = ['#6366f1', '#8b5cf6', '#0ea5e9'];
+    const colors = ['#16a34a', '#0891b2', '#4f46e5'];
 
-    const factorHtml = factors.map((f, i) => `
+    const factorHtml = (factors || []).map((f, i) => `
       <div class="factor">
         <div class="row"><span>${f.label}</span><span>${f.value}%</span></div>
         <div class="bar"><div class="fill" style="width:0%; background:${colors[i]}" data-w="${f.value}"></div></div>
@@ -383,7 +371,7 @@
       <div class="factors"></div>
     `;
 
-    let topic = null, human = null, model = null;
+    let topic = null, human = null, model = null, factors = [];
     try {
       const res = await fetch('/api/analyze', {
         method: 'POST',
@@ -394,6 +382,7 @@
       topic = data.topic;
       human = data.humanPercent;
       model = data.model;
+      factors = data.factors || [];
     } catch {}
 
     if (human == null) {
@@ -402,7 +391,7 @@
       if (words < 40) ai = Math.max(ai, 14);
       human = 100 - ai;
     }
-    renderResult(topic, human, model);
+    renderResult(topic, human, factors, model);
   }
 
   document.getElementById('text').addEventListener('input', onInput);
